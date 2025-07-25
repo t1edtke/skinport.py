@@ -164,7 +164,8 @@ class Client:
             Defaults to ``en``.
         """
         # Only create the aiohttp.ClientSession when the asyncio loop is already running
-        await self.http.start_session()
+        if self.http._HTTPClient__session is None:
+            await self.http.start_session()
 
         # Pinning to TLS v1.3 (thanks CloudFlare)
         ssl_context = ssl.create_default_context()
@@ -184,7 +185,7 @@ class Client:
             _log.info("Client is already connected. Closing the existing connection.")
             await self.close()
 
-        
+
         if len(self.sale_feeds) == 0:
             self.add_sale_feed(app_id=app_id, currency=currency, locale=locale)
 

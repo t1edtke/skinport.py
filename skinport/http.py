@@ -23,6 +23,7 @@ SOFTWARE.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import ssl
@@ -32,7 +33,6 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 import aiohttp
 
 from skinport import __version__
-
 from .errors import (
     AuthenticationError,
     HTTPException,
@@ -43,13 +43,29 @@ from .errors import (
 )
 
 _log = logging.getLogger(__name__)
+_pool = concurrent.futures.ProcessPoolExecutor()
+
+
+async def response_text(self, encoding: Optional[str] = None, errors: str = "strict") -> str:
+    """Read response payload and decode."""
+    if self._body is None:
+        await self.read()
+
+    if encoding is None:
+        encoding = self.get_encoding()
+
+    return await asyncio.get_running_loop().run_in_executor(
+        _pool, self._body.decode, encoding, errors
+    )
 
 
 async def json_or_text(response: aiohttp.ClientResponse) -> Union[Dict[str, Any], str]:
-    text = await response.text(encoding="utf-8")
+    text = await response_text(response, encoding="utf-8")
     try:
         if "application/json" in response.headers["content-type"]:
-            return json.loads(text)
+            return await asyncio.get_running_loop().run_in_executor(
+                _pool, json.loads, text
+            )
     except KeyError:
         pass
 
@@ -151,6 +167,7 @@ class HTTPClient:
                         await asyncio.sleep(retry_after)
                         continue
                     raise HTTPException(response, data)
+            raise HTTPException(response, data)
 
     async def get_items(self, **parameters: Any) -> List[Dict[str, Any]]:
         return await self.request(Route("GET", "/items"), **parameters)
