@@ -43,7 +43,21 @@ from .errors import (
 )
 
 _log = logging.getLogger(__name__)
-_pool = concurrent.futures.ProcessPoolExecutor()
+_pool: Optional[concurrent.futures.ProcessPoolExecutor] = None
+
+
+def _get_process_pool() -> concurrent.futures.ProcessPoolExecutor:
+    global _pool
+    if _pool is None:
+        _pool = concurrent.futures.ProcessPoolExecutor()
+    return _pool
+
+
+def close_process_pool() -> None:
+    global _pool
+    if _pool is not None:
+        _pool.shutdown()
+        _pool = None
 
 
 async def response_text(self, encoding: Optional[str] = None, errors: str = "strict") -> str:
@@ -55,7 +69,7 @@ async def response_text(self, encoding: Optional[str] = None, errors: str = "str
         encoding = self.get_encoding()
 
     return await asyncio.get_running_loop().run_in_executor(
-        _pool, self._body.decode, encoding, errors
+        _get_process_pool(), self._body.decode, encoding, errors
     )
 
 
@@ -64,7 +78,7 @@ async def json_or_text(response: aiohttp.ClientResponse) -> Union[Dict[str, Any]
     try:
         if "application/json" in response.headers["content-type"]:
             return await asyncio.get_running_loop().run_in_executor(
-                _pool, json.loads, text
+                _get_process_pool(), json.loads, text
             )
     except KeyError:
         pass
@@ -109,6 +123,7 @@ class HTTPClient:
     async def close(self) -> None:
         if self.__session:
             await self.__session.close()
+        close_process_pool()
 
     async def start_session(self):
         self.__session = aiohttp.ClientSession()
